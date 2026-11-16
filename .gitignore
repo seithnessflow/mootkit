@@ -1,0 +1,29 @@
+# Données personnelles et état local de Claude Code : jamais dans ce dépôt
+.credentials.json
+settings.json
+settings.local.json
+history.jsonl
+logs/
+projects/
+todos/
+statsig/
+sessions/
+session-env/
+shell-snapshots/
+file-history/
+paste-cache/
+cache/
+plugins/
+backups/
+
+# Générés par hooks/profil.js à partir de profils/gabarits/
+agents/
+
+# Travail local
+.lab/
+attic/
+_a_supprimer/
+worktrees/
+rapports/
+claude-rapports/
+node_modules/

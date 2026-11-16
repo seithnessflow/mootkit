@@ -1,0 +1,10 @@
+#!/bin/sh
+# Pre-commit du kit v5 : settings.exemple.json lisible avec au moins 156 règles dans permissions.deny, et tous les tests
+# (hooks/*-test.js, skills/relecture/*-test.js) ; refuse le commit sur un code non nul. Activé par : git -C ~/.claude config core.hooksPath bench/git-hooks
+cd "$(git rev-parse --show-toplevel)" || exit 1
+unset $(git rev-parse --local-env-vars)
+fail=0
+node -e "const n=((JSON.parse(require('fs').readFileSync('settings.exemple.json','utf8')).permissions||{}).deny||[]).length;console.log('pre-commit : settings.exemple.json, '+n+' règles deny');process.exit(n>=156?0:1)" || { echo "pre-commit : settings.exemple.json illisible ou moins de 156 règles deny"; fail=1; }
+for t in hooks/*-test.js skills/relecture/*-test.js; do n=$(basename "$t" .js); out=$(node "$t" 2>&1) && echo "pre-commit : $n ok" || { echo "$out"; echo "pre-commit : $n ÉCHEC"; fail=1; }; done
+[ $fail -eq 0 ] || { echo "pre-commit : commit refusé"; exit 1; }
+exit 0

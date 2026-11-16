@@ -1,0 +1,12 @@
+{
+  "_table": "v5-fable52d",
+  "scout": {"eco": "haiku low", "normal": "haiku medium", "max": "sonnet medium"},
+  "verifier": {"eco": "haiku medium", "normal": "haiku high", "max": "sonnet medium"},
+  "researcher": {"eco": "sonnet medium", "normal": "fable low", "max": "fable medium"},
+  "reviewer-tests": {"eco": "sonnet medium", "normal": "sonnet high", "max": "opus medium"},
+  "reviewer-securite": {"eco": "sonnet medium", "normal": "opus medium", "max": "opus high"},
+  "analyste": {"eco": "sonnet medium", "normal": "sonnet high", "max": "opus high"},
+  "worker": {"eco": "sonnet medium", "normal": "opus medium", "max": "opus high"},
+  "architect": {"eco": "opus high", "normal": "fable medium", "max": "fable high"},
+  "conseil": {"eco": "opus medium", "normal": "fable medium", "max": "fable xhigh"}
+}

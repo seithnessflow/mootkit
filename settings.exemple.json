@@ -1,0 +1,236 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/profil.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/rappels.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/rappels.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/rappels.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/telemetrie.js\" agent",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/telemetrie.js\" session",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"$HOME/.claude/bench/statusline.js\""
+  },
+  "permissions": {
+    "deny": [
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(xargs rm:*)",
+      "Bash(unlink:*)",
+      "Bash(shred:*)",
+      "Bash(Remove-Item:*)",
+      "Bash(ri:*)",
+      "Bash(del:*)",
+      "Bash(rd:*)",
+      "Bash(erase:*)",
+      "Bash(powershell:*)",
+      "Bash(pwsh:*)",
+      "Bash(cmd:*)",
+      "Bash(sh -c:*)",
+      "Bash(bash -c:*)",
+      "Bash(iex:*)",
+      "Bash(Invoke-Expression:*)",
+      "Bash(eval:*)",
+      "Bash(claude:*)",
+      "Bash(git clean:*)",
+      "Bash(git -C * clean *)",
+      "Bash(git -C * clean)",
+      "Bash(git -c * clean *)",
+      "Bash(git -c * clean)",
+      "Bash(git reset --hard:*)",
+      "Bash(git -C * reset --hard *)",
+      "Bash(git -C * reset --hard)",
+      "Bash(git -c * reset --hard *)",
+      "Bash(git -c * reset --hard)",
+      "Bash(git checkout --:*)",
+      "Bash(git -C * checkout -- *)",
+      "Bash(git -C * checkout --)",
+      "Bash(git -c * checkout -- *)",
+      "Bash(git -c * checkout --)",
+      "Bash(git restore:*)",
+      "Bash(git -C * restore *)",
+      "Bash(git -C * restore)",
+      "Bash(git -c * restore *)",
+      "Bash(git -c * restore)",
+      "Bash(git stash:*)",
+      "Bash(git -C * stash *)",
+      "Bash(git -C * stash)",
+      "Bash(git -c * stash *)",
+      "Bash(git -c * stash)",
+      "Bash(git rm:*)",
+      "Bash(git -C * rm *)",
+      "Bash(git -C * rm)",
+      "Bash(git -c * rm *)",
+      "Bash(git -c * rm)",
+      "Bash(git worktree remove --force:*)",
+      "Bash(git -C * worktree remove --force *)",
+      "Bash(git -C * worktree remove --force)",
+      "Bash(git -c * worktree remove --force *)",
+      "Bash(git -c * worktree remove --force)",
+      "Bash(git worktree remove -f:*)",
+      "Bash(git -C * worktree remove -f *)",
+      "Bash(git -C * worktree remove -f)",
+      "Bash(git -c * worktree remove -f *)",
+      "Bash(git -c * worktree remove -f)",
+      "Bash(git switch -f:*)",
+      "Bash(git -C * switch -f *)",
+      "Bash(git -C * switch -f)",
+      "Bash(git -c * switch -f *)",
+      "Bash(git -c * switch -f)",
+      "Bash(git push --force:*)",
+      "Bash(git -C * push --force *)",
+      "Bash(git -C * push --force)",
+      "Bash(git -c * push --force *)",
+      "Bash(git -c * push --force)",
+      "Bash(git push -f:*)",
+      "Bash(git -C * push -f *)",
+      "Bash(git -C * push -f)",
+      "Bash(git -c * push -f *)",
+      "Bash(git -c * push -f)",
+      "Bash(find -delete)",
+      "Bash(find * -delete)",
+      "Bash(find * -delete *)",
+      "PowerShell(rm:*)",
+      "PowerShell(rmdir:*)",
+      "PowerShell(xargs rm:*)",
+      "PowerShell(unlink:*)",
+      "PowerShell(shred:*)",
+      "PowerShell(Remove-Item:*)",
+      "PowerShell(ri:*)",
+      "PowerShell(del:*)",
+      "PowerShell(rd:*)",
+      "PowerShell(erase:*)",
+      "PowerShell(powershell:*)",
+      "PowerShell(pwsh:*)",
+      "PowerShell(cmd:*)",
+      "PowerShell(sh -c:*)",
+      "PowerShell(bash -c:*)",
+      "PowerShell(iex:*)",
+      "PowerShell(Invoke-Expression:*)",
+      "PowerShell(eval:*)",
+      "PowerShell(claude:*)",
+      "PowerShell(git clean:*)",
+      "PowerShell(git -C * clean *)",
+      "PowerShell(git -C * clean)",
+      "PowerShell(git -c * clean *)",
+      "PowerShell(git -c * clean)",
+      "PowerShell(git reset --hard:*)",
+      "PowerShell(git -C * reset --hard *)",
+      "PowerShell(git -C * reset --hard)",
+      "PowerShell(git -c * reset --hard *)",
+      "PowerShell(git -c * reset --hard)",
+      "PowerShell(git checkout --:*)",
+      "PowerShell(git -C * checkout -- *)",
+      "PowerShell(git -C * checkout --)",
+      "PowerShell(git -c * checkout -- *)",
+      "PowerShell(git -c * checkout --)",
+      "PowerShell(git restore:*)",
+      "PowerShell(git -C * restore *)",
+      "PowerShell(git -C * restore)",
+      "PowerShell(git -c * restore *)",
+      "PowerShell(git -c * restore)",
+      "PowerShell(git stash:*)",
+      "PowerShell(git -C * stash *)",
+      "PowerShell(git -C * stash)",
+      "PowerShell(git -c * stash *)",
+      "PowerShell(git -c * stash)",
+      "PowerShell(git rm:*)",
+      "PowerShell(git -C * rm *)",
+      "PowerShell(git -C * rm)",
+      "PowerShell(git -c * rm *)",
+      "PowerShell(git -c * rm)",
+      "PowerShell(git worktree remove --force:*)",
+      "PowerShell(git -C * worktree remove --force *)",
+      "PowerShell(git -C * worktree remove --force)",
+      "PowerShell(git -c * worktree remove --force *)",
+      "PowerShell(git -c * worktree remove --force)",
+      "PowerShell(git worktree remove -f:*)",
+      "PowerShell(git -C * worktree remove -f *)",
+      "PowerShell(git -C * worktree remove -f)",
+      "PowerShell(git -c * worktree remove -f *)",
+      "PowerShell(git -c * worktree remove -f)",
+      "PowerShell(git switch -f:*)",
+      "PowerShell(git -C * switch -f *)",
+      "PowerShell(git -C * switch -f)",
+      "PowerShell(git -c * switch -f *)",
+      "PowerShell(git -c * switch -f)",
+      "PowerShell(git push --force:*)",
+      "PowerShell(git -C * push --force *)",
+      "PowerShell(git -C * push --force)",
+      "PowerShell(git -c * push --force *)",
+      "PowerShell(git -c * push --force)",
+      "PowerShell(git push -f:*)",
+      "PowerShell(git -C * push -f *)",
+      "PowerShell(git -C * push -f)",
+      "PowerShell(git -c * push -f *)",
+      "PowerShell(git -c * push -f)",
+      "PowerShell(find -delete)",
+      "PowerShell(find * -delete)",
+      "PowerShell(find * -delete *)",
+      "Agent(claude)",
+      "Agent(general-purpose)"
+    ]
+  }
+}
