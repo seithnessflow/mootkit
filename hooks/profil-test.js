@@ -51,8 +51,11 @@ function donnees(home, pct) {
   const row = { ts: new Date(now - 60000).toISOString(), five_hour: 3, seven_day: pct, seven_reset: Math.round(now / 1000 + 3.5 * 86400) };
   fs.writeFileSync(path.join(home, 'logs', 'ratelimits.jsonl'), pct === null ? '' : `${JSON.stringify(row)}\n`);
 }
-function run(home, args, input) {
-  const p = spawnSync(process.execPath, [path.join(__dirname, 'profil.js'), ...args], { input: input === undefined ? '' : JSON.stringify(input), env: { ...process.env, KIT_HOME: home }, encoding: 'utf8' });
+// L'appelant d'une commande se reconnaît par CLAUDE_CODE_SESSION_ID et CLAUDE_PID (posés par Claude Code) : retirés par défaut pour que le test ne dépende pas
+// de la session qui le lance, et passés explicitement par appelant.
+function run(home, args, input, appelant = {}) {
+  const env = { ...process.env, KIT_HOME: home }; delete env.CLAUDE_CODE_SESSION_ID; delete env.CLAUDE_PID; Object.assign(env, appelant);
+  const p = spawnSync(process.execPath, [path.join(__dirname, 'profil.js'), ...args], { input: input === undefined ? '' : JSON.stringify(input), env, encoding: 'utf8' });
   let ctx = null; try { ctx = JSON.parse(p.stdout).hookSpecificOutput.additionalContext; } catch { /* sortie vide ou texte */ }
   return { code: p.status, out: p.stdout, err: p.stderr, ctx };
 }
@@ -159,8 +162,72 @@ const erreurs = (home) => (fs.existsSync(path.join(home, 'logs', 'telemetrie-err
   const a = run(h, ['auto']);
   check('auto : retour au calcul (rythme 1,2 -> eco), mode auto', a.code === 0 && etat(h).mode === 'auto' && etat(h).profil === 'eco' && /model: opus\neffort: high/.test(agent(h, 'architect')), [a, etat(h)]);
   check('forçages et retour tracés dans profils.jsonl', journal(h).filter((l) => l.source === 'force' || l.source === 'auto').length >= 3, journal(h));
+  // incident profils.jsonl 2026-11-15 23:50:08Z et 23:50:16Z : genere a changé le profil (max -> normal -> max) pendant qu'une autre session était ouverte.
+  // La session 'autre' (ligne d'au-dessus) est toujours vivante : changer de profil par genere est refusé et dit ; force reste la voie explicite.
+  const avantRefus = [agent(h, 'architect'), lit(h, 'logs/profil-actif.json')];
+  const gr = run(h, ['genere', 'normal']); const jr = journal(h).pop();
+  check('genere normal avec une autre session vivante : refusé, agents et état inchangés, code 0', gr.code === 0 && agent(h, 'architect') === avantRefus[0] && lit(h, 'logs/profil-actif.json') === avantRefus[1], [gr, etat(h)]);
+  check('genere normal refusé : la sortie le dit et nomme force', /refus/.test(gr.out) && /autre session/.test(gr.out) && /force normal/.test(gr.out), gr.out);
+  check('genere normal refusé : tracé dans profils.jsonl (source genere, voulu normal, appliqué eco, table)', jr.source === 'genere' && jr.voulu === 'normal' && jr.applique === 'eco' && /refus/.test(jr.raison) && jr.table === 'v5-test', jr);
+  const gm = run(h, ['genere', 'eco']);
+  check('genere du profil actif avec une autre session vivante : permis (régénération sans changement)', gm.code === 0 && etat(h).profil === 'eco' && !/refus/.test(gm.out), [gm.out, etat(h)]);
+  fs.rmSync(path.join(h, 'sessions', `${process.pid}.json`));
   const g = run(h, ['genere', 'normal']);
-  check('genere normal : agents normal, mode inchangé', g.code === 0 && /model: opus\neffort: xhigh/.test(agent(h, 'architect')) && etat(h).mode === 'auto', [g, etat(h)]);
+  check('genere normal sans autre session : agents normal, mode inchangé', g.code === 0 && /model: opus\neffort: xhigh/.test(agent(h, 'architect')) && etat(h).mode === 'auto', [g, etat(h)]);
+}
+{ // genere sans argument : régénère le profil actif (profil-actif.json), ne recalcule jamais le rythme (incident profils.jsonl 2026-11-15 23:50:08Z, max -> normal au rythme 0,52)
+  const h = fresh(); donnees(h, 15); demarre(h, 's1'); // rythme 0,3 -> max
+  const e0 = etat(h); donnees(h, 30); // rythme 0,6 : le calcul dirait normal
+  fs.rmSync(path.join(h, 'agents', 'scout.md')); // rôle manquant : genere doit le recréer dans le profil actif
+  const g = run(h, ['genere']); const e1 = etat(h); const j = journal(h).pop();
+  check('genere sans argument : profil actif conservé (max), pas de recalcul (rythme, pct, fraction de l\'état), code 0', g.code === 0 && e1.profil === 'max' && e1.mode === 'auto' && e1.rythme === e0.rythme && e1.pct === e0.pct && e1.fraction === e0.fraction, [g.out, e0, e1]);
+  check('genere sans argument : agents du profil actif régénérés (scout manquant recréé en max)', /model: haiku\neffort: medium/.test(agent(h, 'scout')) && /model: fable\neffort: high/.test(agent(h, 'architect')), agent(h, 'scout'));
+  check('genere sans argument : ligne de journal voulu = appliqué = max, source genere', j.source === 'genere' && j.voulu === 'max' && j.applique === 'max', j);
+  run(h, ['force', 'eco']); donnees(h, 15);
+  const gf = run(h, ['genere']);
+  check('genere sans argument après un forçage : mode force et profil eco conservés', gf.code === 0 && etat(h).profil === 'eco' && etat(h).mode === 'force', [gf.out, etat(h)]);
+  const h2 = fresh(); donnees(h2, 15);
+  const g2 = run(h2, ['genere']);
+  check('genere sans argument et sans état : rien écrit, la sortie demande un profil', g2.code === 0 && fs.readdirSync(path.join(h2, 'agents')).length === 0 && !fs.existsSync(path.join(h2, 'logs', 'profil-actif.json')) && /eco, normal ou max/.test(g2.out), [g2.out, fs.readdirSync(path.join(h2, 'agents'))]);
+}
+{ // Relecture (reviewer-tests) : genere du profil actif après un forçage garde le mode force et le rythme de l'état
+  const h = fresh(); donnees(h, 15); demarre(h, 's1'); run(h, ['force', 'eco']); const e0 = etat(h); donnees(h, 30);
+  const g = run(h, ['genere', 'eco']); const e1 = etat(h);
+  check('force eco puis genere eco : mode force conservé, rythme, pct et fraction inchangés', g.code === 0 && e1.profil === 'eco' && e1.mode === 'force' && e1.rythme === e0.rythme && e1.pct === e0.pct && e1.fraction === e0.fraction, [g.out, e0, e1]);
+}
+{ // Relecture (reviewer-securite) : état absent, vide, tronqué ou inconnu, autre session vivante -> genere <profil> refusé, rien écrit
+  for (const [nom, contenu] of [['absent', null], ['vide', '{}'], ['tronqué', '{"profil":"ma'], ['profil inconnu', '{"profil":"turbo","mode":"auto"}']]) {
+    const h = fresh(); donnees(h, 15);
+    if (contenu !== null) fs.writeFileSync(path.join(h, 'logs', 'profil-actif.json'), contenu);
+    fs.writeFileSync(path.join(h, 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'autre', cwd: h, kind: 'interactive' }));
+    const g = run(h, ['genere', 'normal']); const j = journal(h).pop() || {};
+    const etatApres = fs.existsSync(path.join(h, 'logs', 'profil-actif.json')) ? lit(h, 'logs/profil-actif.json') : null;
+    check(`état ${nom}, autre session vivante : genere normal refusé, aucun agent écrit, état intact, refus dit et tracé`, g.code === 0 && fs.readdirSync(path.join(h, 'agents')).length === 0 && etatApres === contenu && /refus/.test(g.out) && j.source === 'genere' && /refus/.test(j.raison || ''), [g.out, fs.readdirSync(path.join(h, 'agents')), etatApres, j]);
+  }
+}
+{ // Relecture (reviewer-securite) : le contrôle écarte la session qui LANCE la commande (CLAUDE_CODE_SESSION_ID ou CLAUDE_PID), pas celle qui a écrit l'état ;
+  // lanceur sans identité connue : toute session vivante compte. La ligne de refus porte la session du lanceur.
+  const prep = () => { const h = fresh(); donnees(h, 15); demarre(h, 's1'); fs.writeFileSync(path.join(h, 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 's1', cwd: h, kind: 'interactive' })); return h; };
+  const h1 = prep(); const a1 = agent(h1, 'architect');
+  const g1 = run(h1, ['genere', 'normal']);
+  check('lanceur inconnu, seule session vivante = celle de l\'état : refusé (toute session vivante compte)', agent(h1, 'architect') === a1 && etat(h1).profil === 'max' && /refus/.test(g1.out), [g1.out, etat(h1)]);
+  check('lanceur inconnu : la ligne de refus porte session nulle (pas la session de l\'état)', journal(h1).pop().session === null, journal(h1).pop());
+  const h2 = prep();
+  const g2 = run(h2, ['genere', 'normal'], undefined, { CLAUDE_CODE_SESSION_ID: 's1' });
+  check('lanceur = s1 (CLAUDE_CODE_SESSION_ID), seule session vivante = s1 : permis', etat(h2).profil === 'normal' && !/refus/.test(g2.out), [g2.out, etat(h2)]);
+  const h3 = prep();
+  const g3 = run(h3, ['genere', 'normal'], undefined, { CLAUDE_PID: String(process.pid) });
+  check('lanceur reconnu par CLAUDE_PID (pid du fichier de session) : permis', etat(h3).profil === 'normal' && !/refus/.test(g3.out), [g3.out, etat(h3)]);
+  const h4 = prep(); fs.writeFileSync(path.join(h4, 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'autre', cwd: h4, kind: 'interactive' }));
+  const g4 = run(h4, ['genere', 'normal'], undefined, { CLAUDE_CODE_SESSION_ID: 'moi' }); const j4 = journal(h4).pop();
+  check('lanceur moi, autre session vivante : refusé, la ligne de refus porte session moi', /refus/.test(g4.out) && j4.session === 'moi' && etat(h4).profil === 'max', [g4.out, j4]);
+}
+{ // Relecture (reviewer-securite) : profil-actif.json s'écrit par fichier temporaire puis renommage. Preuve : un lien physique vers l'ancien fichier garde
+  // l'ancien contenu (une écriture en place le modifierait aussi), et aucun temporaire ne reste.
+  const h = fresh(); donnees(h, 15); demarre(h, 's1');
+  const f = path.join(h, 'logs', 'profil-actif.json'); const lien = path.join(h, 'ancien-etat.json'); fs.linkSync(f, lien); const ancien = lit(h, 'ancien-etat.json');
+  run(h, ['force', 'eco']);
+  check('profil-actif.json : écrit par temporaire puis renommage (lien physique intact, nouvel état en place, pas de temporaire)', lit(h, 'ancien-etat.json') === ancien && etat(h).profil === 'eco' && !fs.readdirSync(path.join(h, 'logs')).some((x) => /\.tmp$/.test(x)), [lit(h, 'ancien-etat.json'), etat(h), fs.readdirSync(path.join(h, 'logs'))]);
 }
 { // clone neuf : agents/ vide, un rôle manquant déclenche la génération
   const h = fresh(); donnees(h, 35); fs.rmSync(path.join(h, 'agents'), { recursive: true, force: true });

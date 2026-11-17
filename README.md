@@ -72,7 +72,7 @@ On peut forcer un profil en le demandant en langage libre (« passe en eco », �
 
 ## Limites connues
 
-- **Profil annoncé différent du profil servi quand une autre session est ouverte** (correction en cours). Le changement de profil est différé tant qu'une autre session tourne, et le profil annoncé au démarrage peut ne pas être celui des agents effectivement servis.
+- au premier démarrage après un changement de profil, la session peut encore être servie avec les réglages du profil précédent ; cause en cours de vérification
 - **Chemins des hooks non testés sur une autre machine.** La forme `$HOME/.claude/…` a été essayée en lançant la commande par Git Bash depuis un script, pas par le lanceur de hooks de Claude Code lui-même, et seulement sur la machine de l'auteur.
 - **Dossier de configuration déplacé non pris en charge** : les scripts lisent `~/.claude` (ou `KIT_HOME`), pas `CLAUDE_CONFIG_DIR`.
 - **Deux variables pour un même dossier de rapports** : `KIT_RAPPORTS` et `TELEMETRIE_RAPPORTS`, à régler ensemble.

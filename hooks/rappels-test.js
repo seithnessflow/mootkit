@@ -168,6 +168,11 @@ const enRetard = (r, n) => propre(r) && r.json.hookSpecificOutput.hookEventName 
   viderErreurs();
   const absent = run({ hook_event_name: 'UserPromptSubmit', prompt: 'x', transcript_path: path.join(kit, 'nexiste-pas.jsonl') });
   check('transcript pas encore créé : silence, pas d\'erreur', muet(absent) && erreurs() === '', [absent, erreurs()]);
+  // incident telemetrie-erreurs.log 2026-11-15 00:10 et 03:03 : transcript absent avec prompt_id → TypeError sur .exclus.has (requetes renvoyait [] nu)
+  const absentId = run({ hook_event_name: 'UserPromptSubmit', prompt: 'x', prompt_id: 'pid-absent', session_id: 's1', transcript_path: path.join(kit, 'nexiste-pas.jsonl') });
+  check('transcript pas encore créé, avec prompt_id : silence, code 0, pas d\'erreur', muet(absentId) && erreurs() === '', [absentId, erreurs()]);
+  const vide = require('./rappels.js').requetes(path.join(kit, 'nexiste-pas.jsonl'));
+  check('requetes() sur fichier absent : même forme (tableau vide, .erreurs et .exclus sont des Set)', Array.isArray(vide) && vide.length === 0 && vide.erreurs instanceof Set && vide.exclus instanceof Set, vide);
   check('transcript vide : silence', muet(envoiBrut('')), null);
   const illisible = run({ hook_event_name: 'UserPromptSubmit', prompt: 'x', transcript_path: dossier });
   check('transcript illisible (c\'est un dossier) : silence, code 0, erreur journalisée', muet(illisible) && /rappels/.test(erreurs()), [illisible, erreurs()]);

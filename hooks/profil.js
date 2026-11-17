@@ -5,7 +5,10 @@
 //   node profil.js            hook SessionStart : startup, clear et fork recalculent ; compact et resume réinjectent seulement le profil de l'état (rien recalculé) ;
 //                             agent_id présent : rien ; autre session vivante : le changement de profil est différé (tracé) ;
 //   node profil.js calcul     affiche le choix du moment, n'écrit rien ;
-//   node profil.js genere [eco|normal|max]   régénère les agents (profil donné, sinon selon l'état) ;
+//   node profil.js genere [eco|normal|max]   régénère les agents : sans argument, le profil actif de l'état (profil-actif.json), sans jamais recalculer le rythme
+//                             (le recalcul n'a lieu qu'au démarrage d'une session) ; sans état, rien n'est écrit. Avec un profil autre que l'actif et une autre
+//                             session vivante : refusé, dit et tracé (le profil ne change pas en cours de session ; la demande explicite passe par force).
+//                             Incident : profils.jsonl, 2026-11-15 23:50:08Z et 23:50:16Z (max -> normal -> max sous une autre session ouverte) ;
 //   node profil.js force eco|normal|max      force ce profil jusqu'à `auto` ; appliqué même avec une autre session ouverte ;
 //   node profil.js auto       retour au profil calculé ;
 //   node profil.js fable coupe|autorise      interrupteur « sans Fable » (limite Fable séparée constatée le 2026-11-10) : coupe rend les rôles Fable sur opus, même effort ;
@@ -129,12 +132,20 @@ function applique(contenus, profil, manquantsSeulement, deplaces = [], suivi = {
   return suivi.ecrits.length > 0;
 }
 
-// Autre session vivante : un fichier sessions/<pid>.json d'un autre sessionId dont le pid existe (EPERM = vivant).
-function autreSession(courante) {
+// Autre session vivante : un fichier sessions/<pid>.json dont le pid existe (EPERM = vivant), hors la session courante (même sessionId, ou même pid si pidCourant est donné).
+function autreSession(courante, pidCourant = null) {
   let fichiers = []; try { fichiers = fs.readdirSync(P('sessions')).filter((f) => f.endsWith('.json')); } catch { return false; }
   return fichiers.some((f) => {
-    try { const s = JSON.parse(lire(P('sessions', f))); if (!s.sessionId || s.sessionId === courante) return false; process.kill(s.pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
+    try { const s = JSON.parse(lire(P('sessions', f))); if (!s.sessionId || s.sessionId === courante || (pidCourant && s.pid === pidCourant)) return false; process.kill(s.pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
   });
+}
+// Session qui lance une commande : CLAUDE_CODE_SESSION_ID et CLAUDE_PID, posés par Claude Code pour ses commandes. Lanceur inconnu (terminal) : toute session vivante compte.
+// Relecture reviewer-securite du 2026-11-17 : exclure la session qui a écrit l'état laissait passer un changement de profil sous cette session.
+const appelant = () => ({ id: process.env.CLAUDE_CODE_SESSION_ID || null, pid: Number(process.env.CLAUDE_PID) || null });
+// Écriture par temporaire puis renommage : un lecteur concurrent (hook d'une autre session) ne voit jamais un état partiel.
+function ecritAtomique(f, txt) {
+  const tmp = `${f}.${process.pid}.tmp`;
+  try { fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f); } catch (e) { try { fs.rmSync(tmp, { force: true }); } catch { /* temporaire à nous */ } throw e; }
 }
 
 // Applique, écrit le journal (dans un finally : ce qui a été déplacé ou écrit se garde même si une exception interrompt la suite), puis l'état en dernier.
@@ -150,7 +161,7 @@ function fixe(v, prec, session, source) {
   }
   if (erreur) { try { erreur.faits = { deplaces, ecrits: suivi.ecrits, illisibles: suivi.illisibles }; } catch { /* valeur levée non modifiable */ } throw erreur; }
   const e = { profil: v.profil, mode: v.mode, rythme: v.rythme, pct: v.pct, fraction: v.fraction, raison: v.raison, genere_a: change || !(prec && prec.genere_a) ? new Date().toISOString() : prec.genere_a, session, table, sans_fable: sans };
-  fs.mkdirSync(P('logs'), { recursive: true }); fs.writeFileSync(P('logs', 'profil-actif.json'), JSON.stringify(e));
+  fs.mkdirSync(P('logs'), { recursive: true }); ecritAtomique(P('logs', 'profil-actif.json'), JSON.stringify(e));
   return { ...e, deplaces, illisibles: suivi.illisibles };
 }
 
@@ -172,19 +183,30 @@ function sessionStart(input) {
 }
 
 function commande(cmd, arg) {
-  const prec = etatLu();
+  const prec = etatLu(); const moi = appelant(); const autre = () => autreSession(moi.id, moi.pid);
   if (!['calcul', 'genere', 'force', 'auto', 'fable'].includes(cmd)) return sortie(`commande inconnue : ${cmd}`);
   if (cmd === 'calcul') return sortie(JSON.stringify(choisir(lignes(), Date.now())));
   if ((cmd === 'force' || (cmd === 'genere' && arg)) && !PROFILS.includes(arg)) return sortie(`profil inconnu : ${arg} (eco, normal ou max)`);
   if (cmd === 'fable' && !['coupe', 'autorise'].includes(arg)) return sortie(`argument inconnu : ${arg === undefined ? '' : arg} (coupe ou autorise)`);
+  if (cmd === 'genere') {
+    const actif = prec && PROFILS.includes(prec.profil) ? prec.profil : null;
+    if (!arg && !actif) return sortie('genere : pas de profil actif (profil-actif.json absent ou invalide), rien écrit ; précise eco, normal ou max');
+    if (arg && arg !== actif && autre()) { // état absent, vide, tronqué ou inconnu compris : actif nul n'est jamais « le même profil »
+      ajoute('profils.jsonl', { date: new Date().toISOString(), session: moi.id, source: 'genere', table: prec && typeof prec.table === 'string' && prec.table ? prec.table : versionTable(), sans_fable: sansFable(prec), voulu: arg, applique: actif, raison: `autre session vivante : genere ${arg} refusé (le profil ne change pas en cours de session)` });
+      return sortie(`${actif ? texte(prec) : 'pas de profil actif valide (profil-actif.json absent ou invalide)'} ; genere ${arg} refusé : une autre session est ouverte et le profil ne change pas en cours de session ; sur demande explicite de l'utilisateur : force ${arg}`);
+    }
+    const p = arg || actif; const garde = prec && p === actif; // même profil : mode, rythme, pct et fraction de l'état gardés (rien recalculé) ; la raison dit la régénération
+    const v = { profil: p, mode: garde && prec.mode === 'force' ? 'force' : 'auto', rythme: garde ? prec.rythme : null, pct: garde ? prec.pct : null, fraction: garde ? prec.fraction : null, raison: arg ? `génération du profil ${arg}` : `régénération du profil actif ${p}` };
+    const e = fixe(v, prec, (prec && prec.session) || null, cmd);
+    return sortie(`${texte(e)}${autre() ? ' ; autre session ouverte : ses agents se rechargent' : ''}`);
+  }
   const c = choisir(lignes(), Date.now());
   const v = cmd === 'fable' ? { ...(prec && PROFILS.includes(prec.profil) ? { ...c, profil: prec.profil, mode: prec.mode === 'force' ? 'force' : 'auto', rythme: prec.rythme, pct: prec.pct, fraction: prec.fraction } : voulu(null)),
       raison: arg === 'coupe' ? "sans Fable : demandé par l'utilisateur" : "Fable autorisé par l'utilisateur", sans_fable: arg === 'coupe' }
     : cmd === 'force' ? { ...c, profil: arg, mode: 'force', raison: 'forcé par l\'utilisateur' }
-    : cmd === 'genere' && arg ? { ...c, profil: arg, mode: 'auto', raison: `génération du profil ${arg}` }
-      : cmd === 'genere' ? voulu(prec) : { ...c, mode: 'auto' };
+      : { ...c, mode: 'auto' };
   const e = fixe(v, prec, (prec && prec.session) || null, cmd);
-  sortie(`${texte(e)}${autreSession(prec && prec.session) ? ' ; autre session ouverte : ses agents se rechargent' : ''}`);
+  sortie(`${texte(e)}${autre() ? ' ; autre session ouverte : ses agents se rechargent' : ''}`);
 }
 
 module.exports = { choisir };

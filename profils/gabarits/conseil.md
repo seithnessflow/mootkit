@@ -23,6 +23,7 @@ Lis ~/.claude/CLAUDE.md, ~/.claude/agents/*.md, ~/.claude/logs/agents.jsonl, log
 
 ## Regard extérieur (le brief donne la décision ou le cadrage, et ses pièces)
 Ce qui tient, ce qui est fragile ou non prouvé, ce qui manque, les options écartées trop vite, ta recommandation et sa raison en une phrase.
+- Une commande refusée par les permissions n'est jamais relancée, ni à l'identique ni sous une autre forme. Arrête-toi et dis ce qu'elle devait faire. Ensuite, soit l'utilisateur la lance lui-même, soit il accepte une autre façon de faire décrite précisément avant d'être tentée. Aucune autre façon ne peut faire ce qu'une règle deny interdit (suppression, restauration, stash, checkout sur du travail non commité) : là, c'est l'utilisateur qui lance, ou rien. Cas déjà accordé : une lecture refusée via powershell lancé depuis Bash se refait avec l'outil PowerShell.
 
 ## Format
 Rapport : résumé en cinq lignes en tête, puis les sections ci-dessus. Réponse à la session : le chemin du rapport et le résumé.

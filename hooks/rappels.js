@@ -56,10 +56,11 @@ const estPrompt = (o) => {
   return !['task-notification', 'peer'].includes((o.origin || {}).kind) && !/^\s*<task-notification>/.test(typeof c === 'string' ? c : (c[0] || {}).text);
 };
 // Requêtes principales du transcript, réduites à ce qui sert (id, usage, outils), et les prompts utilisateur ({ prompt: true }) à leur place ; une ligne
-// corrompue est ignorée, un fichier absent donne [], un fichier illisible lève. Le tableau porte .erreurs : les tool_use_id dont le tool_result est en is_error.
+// corrompue est ignorée, un fichier absent donne un tableau vide de même forme, un fichier illisible lève. Le tableau porte toujours .erreurs (les tool_use_id dont le
+// tool_result est en is_error) et .exclus (promptId exclus) : un [] nu faisait tomber decide() sur .exclus.has (telemetrie-erreurs.log, 2026-11-15 00:10 et 03:03).
 function requetes(f) {
-  let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
   const res = []; res.erreurs = new Set(); res.exclus = new Set();
+  let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return res; throw e; }
   for (const l of txt.split('\n')) {
     let o; try { o = l && JSON.parse(l); } catch { continue; }
     if (o && o.type === 'user' && typeof o.promptId === 'string' && (o.isCompactSummary === true || ['peer', 'task-notification'].includes((o.origin || {}).kind))) res.exclus.add(o.promptId);

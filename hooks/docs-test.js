@@ -144,4 +144,23 @@ check('ATTENTE gabarit worker : commande longue en arrière-plan, attendue par d
 check('ATTENTE gabarit worker : attente totale bornée à 45 min, puis rendre la main en le disant', /45 min/.test(worker) && /rends la main en le disant/.test(worker), worker);
 check('ATTENTE gabarit architect : un test long s\'attend comme le worker, 170 s au plus, jamais par une fin de tour', /plus de 3 min/.test(archiG) && /170 s au plus/.test(archiG) && /jamais par une fin de tour/.test(archiG), archiG);
 
+// Commande refusée. Incident : `claude --version` refusé par permissions.deny puis relancé à l'identique, session 2dffca68 (2026-11-09 19:39 et 19:40) et 30e2753d
+// (2026-11-15 03:03, deux fois) ; rapport 2026-11-15_21h23-bilan-kit.md, recommandation 6. Règle dans CLAUDE.md et dans chaque gabarit qui a un shell.
+const refus = ligne(doc, /^- Commande refusée/);
+// Formulation resserrée par l'utilisateur le 2026-11-17 (relecture reviewer-securite : « sans accord » lu à contrario ouvrait un contournement de deny).
+const noyau = (t) => [/n'est jamais relancée, ni à l'identique ni sous une autre forme/, /la lance lui-même/, /une autre façon de faire décrite précisément avant d'être tentée/, /Aucune autre façon ne peut faire ce qu'une règle deny interdit \(suppression, restauration, stash, checkout sur du travail non commité\)/, /c'est l'utilisateur qui lance, ou rien/, /Cas déjà accordé/, /powershell lancé depuis Bash se refait avec l'outil PowerShell/].filter((re) => !re.test(t)).map(String);
+check('REFUS CLAUDE.md : jamais relancée ni sous une autre forme ; l\'utilisateur lance, ou accepte une autre façon décrite avant ; rien contre deny ; lecture PowerShell déjà accordée', /refusée par les permissions/.test(refus) && noyau(refus).length === 0, noyau(refus).join(' ; ') || refus);
+check('REFUS CLAUDE.md : on s\'arrête et on dit ce qu\'elle devait faire ; plus de « continue avec un outil autorisé »', /On s'arrête et on dit ce qu'elle devait faire/.test(refus) && !/continue avec un outil autorisé/.test(refus), refus);
+const avecShell = fs.readdirSync(path.join(kit, 'profils', 'gabarits')).filter((f) => f.endsWith('.md')).filter((f) => { const t = lit('profils', 'gabarits', f); const tools = (/^tools:\s*(.*)$/m.exec(t) || [])[1]; return tools === undefined || /\b(Bash|PowerShell)\b/.test(tools); });
+const sansRegle = avecShell.filter((f) => { const t = lit('profils', 'gabarits', f); return !(/refusée par les permissions/.test(t) && /Arrête-toi et dis ce qu'elle devait faire/.test(t) && noyau(t).length === 0); });
+check('REFUS gabarits avec un shell (tools absent = tous les outils, ou Bash, ou PowerShell) : la règle y est, à la deuxième personne', avecShell.length === 7 && sansRegle.length === 0, `avec shell : ${avecShell.join(', ')} ; sans la règle : ${sansRegle.join(', ')}`);
+// Rechargement des agents. Incident : session 4854a179 (2026-11-11 12:41Z), agents réécrits normal par le hook de démarrage, 64 lancements servis avec l'ancien profil max.
+const recharge = ligne(doc, /profil\.js force eco\|normal\|max/);
+check('RECHARGEMENT CLAUDE.md : plus de « en moins de deux minutes » ; quelques secondes en cours de session, pas garanti pour la session qui démarre (4854a179, à confirmer)', !/en moins de deux minutes/.test(doc) && /en cours de session sont rechargés en quelques secondes/.test(recharge) && /hook de démarrage ne sont pas garantis pour la session qui démarre/.test(recharge) && /4854a179/.test(recharge) && /à confirmer/.test(recharge), recharge);
+
+// Moratoire périmé. Incident : le moratoire courait jusqu'au bilan, fait le 2026-11-15 (rapport 2026-11-15_21h23-bilan-kit.md). Une seule règle à sa place.
+check('MORATOIRE CLAUDE.md : plus de section ni de mention du moratoire', !/moratoire/i.test(doc) && !/prochain bilan/.test(doc), ligne(doc, /oratoire|prochain bilan/));
+const incident = ligne(doc, /incident daté/);
+check('MORATOIRE CLAUDE.md : toute modification du kit cite un incident daté et vérifiable, repris dans le message de commit', /toute modification du kit/i.test(incident) && /incident daté et vérifiable/.test(incident) && /message de commit/.test(incident), incident);
+
 process.exit(fail);
