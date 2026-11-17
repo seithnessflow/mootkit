@@ -163,4 +163,35 @@ check('MORATOIRE CLAUDE.md : plus de section ni de mention du moratoire', !/mora
 const incident = ligne(doc, /incident daté/);
 check('MORATOIRE CLAUDE.md : toute modification du kit cite un incident daté et vérifiable, repris dans le message de commit', /toute modification du kit/i.test(incident) && /incident daté et vérifiable/.test(incident) && /message de commit/.test(incident), incident);
 
+// Équipes d'agents. Incident : session b4eab564 (2026-11-16), workers lancés avec un nom (o1e, o2, o3) devenus équipiers (taskKind in_process_teammate) ;
+// rapport 2026-11-17_06h45-temps-essaim-refus.md, section 5.
+check('ÉQUIPES settings.exemple.json : plus de CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS dans env', !('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' in (settings.env || {})), JSON.stringify(settings.env));
+const sansNom = ligne(orch, /sans nom/);
+check('ÉQUIPES CLAUDE.md orchestration : un sous-agent se lance par son rôle seul, sans nom, avec l\'incident', /Un sous-agent se lance par son rôle seul/.test(sansNom) && /sans nom/.test(sansNom) && /b4eab564/.test(sansNom), sansNom);
+
+// Rapport d'étape. Incident : arrêts écrits seulement dans le terminal, session kit-public le 2026-11-16 (10h09, 10h20) et session du kit le 2026-11-17 (02h24, 05h25, 05h43).
+const rapportSection = doc.slice(doc.indexOf('## Rapport de fin de tâche'), doc.indexOf('## Priorité des consignes'));
+const etapeR = ligne(rapportSection, /^Rapport d'étape/);
+check('ÉTAPE CLAUDE.md rapports : avant tout arrêt qui attend l\'utilisateur (refus, question, choix, go), fichier <...>-<projet>-etape.md, fait, question, options, une ligne', /avant tout arrêt qui attend la réponse de l'utilisateur/.test(etapeR) && /écris dans ce même dossier/.test(etapeR) && /^## Rapport de fin de tâche\n.*\$KIT_RAPPORTS/.test(rapportSection) && /commande refusée, question, choix entre options, go/.test(etapeR) && /-<projet>-etape\.md/.test(etapeR) && /ce qui est fait, la question et les options/.test(etapeR) && /une seule ligne/.test(etapeR), etapeR);
+
+// Refus de travail légitime. Incident : rapport 2026-11-17_06h45-temps-essaim-refus.md, section 4 : 39 refus légitimes sur 60 (14 suppressions dans le scratchpad ou un dossier temporaire,
+// 12 `claude --version`, 2 `git stash list`). Aucune règle de permissions ne change : consignes dans CLAUDE.md et dans chaque gabarit qui a un shell.
+const consignes = (t) => [/dans le scratchpad, jamais de suppression \(écrase seulement tes propres fichiers de la tâche en cours, sinon écris dans un nouveau sous-dossier\)/, /`git reflog show --format="%gd %gs" refs\/stash`, jamais par `git stash` \(code 128 : aucun stash\)/, /champ `version` des transcripts, jamais par `claude --version`/, /boucle sans `bash -c`/].filter((re) => !re.test(t)).map(String);
+check('SANS REFUS CLAUDE.md : scratchpad sans suppression, stashs par reflog, version par les transcripts, attente sans bash -c', consignes(doc).length === 0, consignes(doc).join(' ; '));
+const sansConsignes = avecShell.filter((f) => consignes(lit('profils', 'gabarits', f)).length > 0);
+check('SANS REFUS gabarits avec un shell : les quatre consignes y sont', avecShell.length === 7 && sansConsignes.length === 0, `sans les consignes : ${sansConsignes.join(', ')}`);
+
+// Vérifier, c'est faire tourner. Incident : audit du rapport 2026-11-17_05h55-kit-corrections.md, idée b : rien sur le linter, le build, l'ordre ni le lancement réel.
+const workerG = lit('profils', 'gabarits', 'worker.md');
+check('FAIRE TOURNER CLAUDE.md : vérifier, c\'est faire tourner le changement, pas relire le diff', /« Fini » veut dire vérifié, et vérifier, c'est faire tourner le changement, pas relire le diff/.test(doc), ligne(doc, /Fini/));
+check('FAIRE TOURNER gabarit worker : linter et types, tests ciblés, build, lancement réel, dans cet ordre, chacun dans COMMANDES', /linter et types, puis tests ciblés, puis build, puis lancement réel quand c'est possible, chacun noté dans COMMANDES/.test(workerG), ligne(workerG, /linter/));
+
+// Trois tours et tests instables. Incident : audit du rapport 2026-11-17_05h55-kit-corrections.md, idée c : arrêt après 3 tentatives et escalade, rien sur les tests instables.
+const arret = doc.slice(doc.indexOf('## Quand t\'arrêter'), doc.indexOf('## Les autres questions'));
+const tours = ligne(arret, /3 tentatives/); const instable = ligne(arret, /test est instable/); const instableW = ligne(lit('profils', 'gabarits', 'worker.md'), /Test instable/);
+const interdits = (t) => /jamais de skip, de sleep ni de relance jusqu'au vert/.test(t) && /jamais de suppression du test/.test(t);
+check('TOURS CLAUDE.md : une tentative est une correction d\'un check qui échoue, l\'escalade reste à l\'intérieur des 3 tours', /une tentative, ou un tour, est une correction d'un check qui échoue/.test(tours) && /l'escalade de l'orchestration reste à l'intérieur de ces 3 tours/.test(tours), tours);
+check('INSTABLE CLAUDE.md : ni skip, ni sleep, ni relance jusqu\'au vert, ni suppression ; la cause, sinon arrêt et remontée', interdits(instable) && /test est instable et sa cause reste introuvable après l'avoir cherchée : on s'arrête et on remonte ce qui a été essayé/.test(instable), instable);
+check('INSTABLE gabarit worker : la même règle à la deuxième personne', interdits(instableW) && /Cherche la cause, sinon arrête-toi et remonte ce qui a été essayé/.test(instableW), instableW);
+
 process.exit(fail);

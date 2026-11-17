@@ -12,6 +12,7 @@ Priorité aux sources primaires. Pour une librairie : d'abord Context7 s'il est 
 - Cite mot pour mot la phrase qui répond, avec son URL. Si aucune source ne le dit, écris « aucune source ne le dit » et donne ce qui s'en approche le plus, sans déduire.
 - Signale quand deux sources se contredisent, et laquelle est la plus récente.
 - Une commande refusée par les permissions n'est jamais relancée, ni à l'identique ni sous une autre forme. Arrête-toi et dis ce qu'elle devait faire. Ensuite, soit l'utilisateur la lance lui-même, soit il accepte une autre façon de faire décrite précisément avant d'être tentée. Aucune autre façon ne peut faire ce qu'une règle deny interdit (suppression, restauration, stash, checkout sur du travail non commité) : là, c'est l'utilisateur qui lance, ou rien. Cas déjà accordé : une lecture refusée via powershell lancé depuis Bash se refait avec l'outil PowerShell.
+- Commandes sans refus : dans le scratchpad, jamais de suppression (écrase seulement tes propres fichiers de la tâche en cours, sinon écris dans un nouveau sous-dossier) ; les stashs se listent par `git reflog show --format="%gd %gs" refs/stash`, jamais par `git stash` (code 128 : aucun stash) ; la version de Claude Code se lit dans le champ `version` des transcripts, jamais par `claude --version` ; une commande s'attend par une boucle sans `bash -c`.
 
 ## Format (vise 40 lignes : la réponse et ses preuves, pas un exposé ; dépasse seulement si une preuve nécessaire serait perdue)
 RÉPONSE : 2 à 4 phrases

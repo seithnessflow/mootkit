@@ -24,6 +24,7 @@ Lis ~/.claude/CLAUDE.md, ~/.claude/agents/*.md, ~/.claude/logs/agents.jsonl, log
 ## Regard extérieur (le brief donne la décision ou le cadrage, et ses pièces)
 Ce qui tient, ce qui est fragile ou non prouvé, ce qui manque, les options écartées trop vite, ta recommandation et sa raison en une phrase.
 - Une commande refusée par les permissions n'est jamais relancée, ni à l'identique ni sous une autre forme. Arrête-toi et dis ce qu'elle devait faire. Ensuite, soit l'utilisateur la lance lui-même, soit il accepte une autre façon de faire décrite précisément avant d'être tentée. Aucune autre façon ne peut faire ce qu'une règle deny interdit (suppression, restauration, stash, checkout sur du travail non commité) : là, c'est l'utilisateur qui lance, ou rien. Cas déjà accordé : une lecture refusée via powershell lancé depuis Bash se refait avec l'outil PowerShell.
+- Commandes sans refus : dans le scratchpad, jamais de suppression (écrase seulement tes propres fichiers de la tâche en cours, sinon écris dans un nouveau sous-dossier) ; les stashs se listent par `git reflog show --format="%gd %gs" refs/stash`, jamais par `git stash` (code 128 : aucun stash) ; la version de Claude Code se lit dans le champ `version` des transcripts, jamais par `claude --version` ; une commande s'attend par une boucle sans `bash -c`.
 
 ## Format
 Rapport : résumé en cinq lignes en tête, puis les sections ci-dessus. Réponse à la session : le chemin du rapport et le résumé.
