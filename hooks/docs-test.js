@@ -168,11 +168,42 @@ check('MORATOIRE CLAUDE.md : toute modification du kit cite un incident daté et
 check('ÉQUIPES settings.exemple.json : plus de CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS dans env', !('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' in (settings.env || {})), JSON.stringify(settings.env));
 const sansNom = ligne(orch, /sans nom/);
 check('ÉQUIPES CLAUDE.md orchestration : un sous-agent se lance par son rôle seul, sans nom, avec l\'incident', /Un sous-agent se lance par son rôle seul/.test(sansNom) && /sans nom/.test(sansNom) && /b4eab564/.test(sansNom), sansNom);
+// Copie publique. Incident : rapport 2026-11-17_08h16-kit-public-etape.md, la copie a refusé d'écrire à cause d'un chemin personnel en dur (ce fichier, test du rapport
+// d'étape) et d'un nom de projet écrit entre « session » et l'identifiant. Une règle cite une session par son seul identifiant : « session <id> » directement,
+// suivi d'une ponctuation, de « le » ou d'une date, et précédé d'un mot de liaison (jamais d'un nom). Les cas témoins prennent un nom fictif.
+const ID = /\b[0-9a-f]{8}\b/g;
+const sessionNommee = (t) => t.split('\n').filter((l) => [...l.matchAll(ID)].some((m) => { const av = l.slice(0, m.index); const ap = l.slice(m.index + 8);
+  const s = /(\S*)\s*\bsessions?\s+$/iu.exec(av); if (!s) return /\bsessions?\b/iu.test(av.slice(-60)); // identifiant pas directement après « session », alors que « session » est juste avant
+  return !/^(\s*$|[,;:)]|\s+(le|à)\b|\s+\(?\d{4}-\d\d-\d\d)/u.test(ap) || !/^(|\(|la|une|cette|chaque|de|sur|par|dans|en|et)$/iu.test(s[1]); }));
+const nommees = [doc, ...fs.readdirSync(path.join(kit, 'profils', 'gabarits')).map((f) => lit('profils', 'gabarits', f))].flatMap(sessionNommee);
+const fictif = ['pro', 'jetx'].join(''); const temoinsNommes = [`(session ${fictif} b4eab564)`, `(session b4eab564 (${fictif}))`, `(${fictif}, session b4eab564)`, `(session du projet ${fictif} b4eab564)`, `(session b4eab564 d'${fictif})`, `(session ${fictif} : b4eab564)`];
+const temoinsPropres = ['(session b4eab564, 2026-11-16 : o1e, o2, o3)', '(observé sur la session 4854a179 le 2026-11-11, à confirmer)', '(session b4eab564 2026-11-16)', 'commit 592ce75f sans session'];
+check('PUBLIC CLAUDE.md et gabarits : aucune règle ne cite un nom de projet à côté d\'un identifiant de session', nommees.length === 0 && temoinsNommes.every((x) => sessionNommee(x).length === 1) && temoinsPropres.every((x) => sessionNommee(x).length === 0),
+  `${nommees.join(' | ')} || témoins nommés non vus : ${temoinsNommes.filter((x) => !sessionNommee(x).length).join(' | ')} || témoins propres vus : ${temoinsPropres.filter((x) => sessionNommee(x).length).join(' | ')}`);
+// Stash détruit hors de git stash. Incident : rapport 2026-11-17_07h48-kit-regles.md, relecture de reviewer-securite : deny bloquait `git stash drop`, ni `git reflog delete`,
+// ni `git reflog expire`, ni `git update-ref -d` ; décision du 2026-11-18 : aussi `git reflog drop`, et tout `git update-ref` (aucun usage dans le kit ni les historiques). Syntaxe : https://code.claude.com/docs/en/permissions (`:*` final = ` *` ; `*` = tout texte, espaces compris).
+const regle = (r) => { const m = /^(Bash|PowerShell)\((.*)\)$/.exec(r); if (!m) return null; const p = m[2].endsWith(':*') ? `${m[2].slice(0, -2)} *` : m[2]; const seul = (p.match(/\*/g) || []).length === 1 && p.endsWith(' *');
+  const corps = p.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*'); return [m[1], new RegExp(`^${seul ? `${corps.slice(0, -3)}(?: .*)?` : corps}$`, m[1] === 'PowerShell' ? 'i' : '')]; };
+const bloque = (outil, cmd) => deny.map(regle).some((x) => x && x[0] === outil && x[1].test(cmd));
+const detruit = ['git reflog delete refs/stash@{0}', 'git reflog expire --expire=now refs/stash', 'git reflog expire', 'git update-ref -d refs/stash', 'git -C ~/x reflog delete refs/stash@{1}', 'git -C ~/x reflog expire', 'git -c core.x=1 reflog expire --expire=all --all', 'git -c a=b update-ref -d refs/stash', 'git -C ~/x update-ref -d',
+  'git reflog drop refs/stash', 'git reflog drop --all', 'git -C ~/x reflog drop refs/stash', 'git -c a=b reflog drop', 'git update-ref refs/stash HEAD', 'git update-ref -m x -d refs/stash',
+  'git update-ref --no-deref -d refs/stash', 'git update-ref --stdin', 'git update-ref', 'git -C ~/x update-ref --stdin -z', 'git -c a=b update-ref refs/heads/x HEAD'];
+const passe = ['git reflog show --format="%gd %gs" refs/stash', 'git -C ~/x reflog show --format="%gd %gs" refs/stash', 'git reflog', 'git show-ref', 'git log --oneline'];
+const trous = ['Bash', 'PowerShell'].flatMap((o) => [...detruit.filter((c) => !bloque(o, c)).map((c) => `${o} non bloqué : ${c}`), ...passe.filter((c) => bloque(o, c)).map((c) => `${o} bloqué à tort : ${c}`)]);
+check('STASH settings.exemple.json : reflog delete, reflog expire, reflog drop et tout update-ref refusés (Bash et PowerShell, -C et -c) ; reflog show permis', trous.length === 0 && bloque('Bash', 'git stash drop') && !bloque('Bash', 'git status'), trous.join(' ; '));
+const seuil = Number((/process\.exit\(n>=(\d+)\?0:1\)/.exec(lit('bench', 'git-hooks', 'pre-commit')) || [])[1]);
+check('STASH pre-commit : le nombre minimal de règles deny est celui de settings.exemple.json', seuil === deny.length && new RegExp(`au moins ${seuil} règles`).test(lit('bench', 'git-hooks', 'pre-commit')) && new RegExp(`moins de ${seuil} règles`).test(lit('bench', 'git-hooks', 'pre-commit')), `seuil ${seuil}, deny ${deny.length}`);
+// Tampon de vérification par commit. Incident : audit du rapport 2026-11-17_05h55-kit-corrections.md, idée a, et bilan 2026-11-15_21h23-bilan-kit.md : qualité mesurable par les rapports seulement.
+const verifie = (t) => ligne(t, /Verified-By:/);
+const tampon = (t) => /chaque message de commit finit par un trailer `Verified-By:`/i.test(verifie(t)) && /ce qui a réellement tourné/.test(verifie(t)) && /tests, build, lint, e2e/.test(verifie(t)) && /`none` avec la raison/.test(verifie(t));
+check('TAMPON CLAUDE.md et gabarit worker : chaque commit finit par un trailer Verified-By: avec ce qui a réellement tourné (ou none et la raison), une ligne chacun', tampon(doc) && tampon(lit('profils', 'gabarits', 'worker.md')) && verifie(doc).split('\n').length === 1 && verifie(lit('profils', 'gabarits', 'worker.md')).split('\n').length === 1, `${verifie(doc)} | ${verifie(lit('profils', 'gabarits', 'worker.md'))}`);
+const etapeTest = ligne(fs.readFileSync(__filename, 'utf8'), /^check\('ÉTAPE CLAUDE\.md rapports/);
+check('PUBLIC docs-test : le test du rapport d\'étape ne dépend pas du nom d\'utilisateur', etapeTest.length > 0 && !etapeTest.includes(require('os').userInfo().username), etapeTest.slice(0, 200));
 
 // Rapport d'étape. Incident : arrêts écrits seulement dans le terminal, session kit-public le 2026-11-16 (10h09, 10h20) et session du kit le 2026-11-17 (02h24, 05h25, 05h43).
 const rapportSection = doc.slice(doc.indexOf('## Rapport de fin de tâche'), doc.indexOf('## Priorité des consignes'));
 const etapeR = ligne(rapportSection, /^Rapport d'étape/);
-check('ÉTAPE CLAUDE.md rapports : avant tout arrêt qui attend l\'utilisateur (refus, question, choix, go), fichier <...>-<projet>-etape.md, fait, question, options, une ligne', /avant tout arrêt qui attend la réponse de l'utilisateur/.test(etapeR) && /écris dans ce même dossier/.test(etapeR) && /^## Rapport de fin de tâche\n.*\$KIT_RAPPORTS/.test(rapportSection) && /commande refusée, question, choix entre options, go/.test(etapeR) && /-<projet>-etape\.md/.test(etapeR) && /ce qui est fait, la question et les options/.test(etapeR) && /une seule ligne/.test(etapeR), etapeR);
+check('ÉTAPE CLAUDE.md rapports : avant tout arrêt qui attend l\'utilisateur (refus, question, choix, go), fichier <...>-<projet>-etape.md, fait, question, options, une ligne', /avant tout arrêt qui attend la réponse de l'utilisateur/.test(etapeR) && /écris dans ce même dossier/.test(etapeR) && /^## Rapport de fin de tâche\n.*`(?:[A-Za-z]:\\Users\\[^\\`]+\\Claude\\rapports|\$KIT_RAPPORTS)\\<AAAA-MM-JJ_HHhMM>-<projet>\.md`/.test(rapportSection) && /commande refusée, question, choix entre options, go/.test(etapeR) && /-<projet>-etape\.md/.test(etapeR) && /ce qui est fait, la question et les options/.test(etapeR) && /une seule ligne/.test(etapeR), etapeR);
 
 // Refus de travail légitime. Incident : rapport 2026-11-17_06h45-temps-essaim-refus.md, section 4 : 39 refus légitimes sur 60 (14 suppressions dans le scratchpad ou un dossier temporaire,
 // 12 `claude --version`, 2 `git stash list`). Aucune règle de permissions ne change : consignes dans CLAUDE.md et dans chaque gabarit qui a un shell.

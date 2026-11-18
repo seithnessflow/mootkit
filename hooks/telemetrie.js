@@ -7,7 +7,10 @@
 //                               imposé est un cran au-dessus de celui du rôle (haiku < sonnet < opus, jamais Fable) écrit escalade, ni modele_impose ni modèle servi au lieu du modèle du
 //                               rôle : le modèle servi se compare alors au modèle demandé. Un worker déjà sur Fable, ou architect quel que soit son modèle (relance de débogage),
 //                               appelé sans modèle avec un effort un cran au-dessus de celui du rôle (low < medium < high < xhigh, jamais max), écrit aussi escalade
-//                               (sortie de Fable 5.2 et benchmarks par effort, 2026-11-09) ;
+//                               (sortie de Fable 5.2 et benchmarks par effort, 2026-11-09). Chaque ligne d'agent porte aussi (rapport 2026-11-17_06h45-temps-essaim-refus.md) :
+//                               attente_fond_s (attente des commandes de fond, méthode du diagnostic temps.js), fond_n (commandes de fond), actifs_au_lancement (autres
+//                               sous-agents de la session actifs à son début), profondeur (meta.spawnDepth) et taskKind (meta.taskKind), nuls s'ils manquent ; seulement sur la ligne
+//                               d'un agent avec historique (la ligne sans_historique garde le payload seul : rien à mesurer). Limite : la fin d'un agent voisin est le mtime de son fichier ;
 //   node telemetrie.js session  (Stop) : total cumulé de la session principale dans logs/sessions.jsonl (une ligne par
 //                               tour, la dernière ligne d'une session fait foi).
 //   Journal des refus (les deux modes) : logs/refus.jsonl, une ligne par refus de permission, lue dans l'historique (toolDenialKind et permissionDecision, champs non documentés
@@ -35,6 +38,46 @@ function rythme(rows) {
   for (const o of rows) if (o.type === 'assistant' && o.message && o.message.usage && o.timestamp) { const id = o.message.id || o.uuid; const r = req.get(id) || [o.timestamp, o.timestamp, false]; r[1] = o.timestamp; if ((o.message.content || []).some((b) => b && b.type === 'tool_use' && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(b.name))) r[2] = true; req.set(id, r); }
   const v = [...req.values()]; const e = v.findIndex((r) => r[2]);
   return { pauses_5min: v.filter((r, i) => i > 0 && Date.parse(r[0]) - Date.parse(v[i - 1][1]) > 300000).length, premiere_edition: e < 0 ? null : e + 1 };
+}
+
+// Attente des commandes de fond (rapport 2026-11-17_06h45-temps-essaim-refus.md), méthode du diagnostic temps.js : intervalles classés par priorité (0 génération, tests
+// et sous-agent au premier plan ; 1 boucle d'attente Bash/PowerShell ; 2 autres commandes, lectures, écritures ; 3 Monitor, TaskOutput, BashOutput ; 4 autres outils, lancements
+// de fond ; 5 fin de tour suivie d'une notification), puis balayage : chaque instant va à l'intervalle actif le plus prioritaire ; attente = instants classés 1, 3 ou 5.
+const BOUCLE = /for i in \$\(seq|until |while \[[\s\S]*(sleep|done)|sleep \d+\s*;\s*done/;
+const TESTS = /Godot_v[\d.]+|lancer\.sh|\bpytest\b|npm (run )?test|node --test|\bjest\b|vitest|go test|cargo test|profil-test|python -m unittest/;
+function attente(rows) {
+  const E = rows.filter((o) => !isNaN(Date.parse(o.timestamp))).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const iv = []; const add = (a, b, p) => { if (b > a) iv.push([a, b, p]); }; const enCours = new Map(); const fond = new Set();
+  let req = null; let asst = null; let res = null; let prompt = null; let fin = null; let rapport = false;
+  for (const o of E) {
+    const t = Date.parse(o.timestamp); const c = o.message && o.message.content; const blocs = Array.isArray(c) ? c : [];
+    if (o.type === 'api-request') { if (req === null) { req = t; res = null; } } else if (o.type === 'assistant') {
+      if (req !== null) add(req, t, 0); else if (asst === null && (res ?? prompt) !== null) add(res ?? prompt, t, 0); else if (asst !== null) add(asst, t, 0);
+      req = res = prompt = null; fin = asst = t;
+      for (const b of blocs) if (b && b.type === 'tool_use') { enCours.set(b.id, [t, b.name, b.input || {}]); if (/^(Bash|PowerShell)$/.test(b.name) && (b.input || {}).run_in_background === true) fond.add(b.id); }
+    } else if (o.type === 'user' && blocs.some((x) => x && x.type === 'tool_result')) {
+      asst = null; res = fin = t; rapport = JSON.stringify(c).includes('Report delivered');
+      for (const x of blocs) { const u = x && x.type === 'tool_result' && enCours.get(x.tool_use_id); if (!u) continue; enCours.delete(x.tool_use_id); const [a, n, i] = u; const sh = /^(Bash|PowerShell)$/.test(n);
+        if (sh && JSON.stringify(x.content || '').includes('moved to the background')) fond.add(x.tool_use_id);
+        add(a, t, sh ? (i.run_in_background ? 4 : BOUCLE.test(i.command || '') ? 1 : TESTS.test(i.command || '') ? 0 : 2) : /^(Read|Grep|Glob|Edit|Write|NotebookEdit)$/.test(n) ? 2 : /^(Monitor|TaskOutput|BashOutput)$/.test(n) ? 3 : /^(Agent|Task)$/.test(n) && !i.run_in_background ? 0 : 4); }
+    } else if (o.type === 'user') {
+      if (fin !== null && !rapport && /<task-notification>|SYSTEM NOTIFICATION/.test(typeof c === 'string' ? c : blocs.map((x) => (x && x.text) || '').join(' '))) add(fin, t, 5);
+      rapport = false; fin = null; if (!o.isMeta) { prompt = t; asst = null; }
+    }
+  }
+  const P = [...new Set(iv.flatMap(([a, b]) => [a, b]))].sort((a, b) => a - b); let s = 0;
+  for (let k = 0; k + 1 < P.length; k++) { const m = (P[k] + P[k + 1]) / 2; const p = Math.min(...iv.filter(([a, b]) => a <= m && b > m).map((x) => x[2])); if (p === 1 || p === 3 || p === 5) s += P[k + 1] - P[k]; }
+  return { attente_fond_s: Math.round(s / 1000), fond_n: fond.size };
+}
+
+// Autres sous-agents actifs au lancement de celui-ci : *.jsonl du même dossier dont le début (premier timestamp des 64 premiers Ko) est ≤ au sien et la fin (mtime) après.
+function actifs(file, debut) {
+  const t = Date.parse(debut); let n = 0; if (isNaN(t)) return null;
+  for (const g of fs.readdirSync(path.dirname(file))) {
+    const f = path.join(path.dirname(file), g); if (!g.endsWith('.jsonl') || path.resolve(f) === path.resolve(file)) continue;
+    try { const fd = fs.openSync(f, 'r'); const buf = Buffer.alloc(65536); const k = fs.readSync(fd, buf, 0, 65536, 0); fs.closeSync(fd); if (Date.parse((/"timestamp":"([^"]+)"/.exec(buf.toString('utf8', 0, k)) || [])[1]) <= t && fs.statSync(f).mtimeMs > t) n++; } catch { /* dossier ou fichier illisible : ignoré */ }
+  }
+  return n;
 }
 
 // Un message de l'assistant s'écrit sur plusieurs lignes (un bloc par ligne) avec le même id : on garde la dernière.
@@ -185,7 +228,8 @@ function agent(input) {
     v: 5, date: u.debut || new Date().toISOString(), session: input.session_id, projet: projet(input.cwd),
     agent: input.agent_id, role, nom: meta.name || null, description: meta.description || null,
     modele_role: r && r.model, modele_appel: appel, modele_servi: u.models,
-    effort_role: r && r.effort, effort_appel: effortAppel, effort_servi: u.effort, tokens: u.tokens, duree_s: u.duree_s, ...rythme(rows), ...(grace ? { rechargement: true } : {}),
+    effort_role: r && r.effort, effort_appel: effortAppel, effort_servi: u.effort, tokens: u.tokens, duree_s: u.duree_s, ...rythme(rows),
+    ...attente(rows), actifs_au_lancement: actifs(file, u.debut), profondeur: meta.spawnDepth ?? null, taskKind: meta.taskKind ?? null, ...(grace ? { rechargement: true } : {}),
   };
   const cran = (m) => ['haiku', 'sonnet', 'opus'].indexOf(family(m));
   const escalade = role === 'worker' && !!appel && !!r && cran(r.model) >= 0 && cran(appel) === cran(r.model) + 1; const voulu = escalade ? appel : r && r.model;

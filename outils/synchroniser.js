@@ -41,15 +41,9 @@ const SETTINGS_CIBLE = 'settings.exemple.json';
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PERSO = os.homedir().split(/[\\/]/).filter(Boolean).map(esc).join('[\\\\/]');
 const SEP = '[\\\\/]';
-// Dans une regex de test, les antislashs du chemin sont doublés (C:\\Users\\…) : ce motif les reconnaît.
-const SEP_REGEX = '\\\\\\\\';
-const PERSO_REGEX = os.homedir().split(/[\\/]/).filter(Boolean).map(esc).join(SEP_REGEX);
+// Les deux remplacements du 17/11 (regex du dossier des rapports dans docs-test.js, « session <projet> <identifiant> ») sont
+// retirés le 18/11 : le kit est corrigé à la source (commit 1dd3339) et ils ne trouvaient plus rien à HEAD b8989fa.
 const REMPLACEMENTS = [
-  { nom: 'dossier des rapports dans une regex de test (devient celle de $KIT_RAPPORTS)', fichiers: ['hooks/docs-test.js'],
-    motif: new RegExp(`${PERSO_REGEX}${SEP_REGEX}Claude${SEP_REGEX}rapports`, 'gi'), par: () => '\\$KIT_RAPPORTS' },
-  // « session <projet> <identifiant> » devient « session <identifiant> » : le nom du projet n'est pas écrit ici, le motif le prend par sa place.
-  { nom: 'nom de projet retiré devant un identifiant de session', fichiers: ['CLAUDE.md', 'hooks/docs-test.js'],
-    motif: /\bsession [a-z][\w-]* ([0-9a-f]{8})\b/g, par: (_, id) => `session ${id}` },
   { nom: 'dossier des rapports (entre accents graves)', fichiers: null,
     motif: new RegExp(`\`${PERSO}${SEP}Claude${SEP}rapports${SEP}([^\`]*)\``, 'gi'),
     par: (_, reste) => `\`$KIT_RAPPORTS\\${reste}\` (KIT_RAPPORTS par défaut : \`$HOME\\Claude\\rapports\`)` },

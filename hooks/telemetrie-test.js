@@ -165,7 +165,40 @@ hook('agent', { agent_type: 'worker' }, [msgT('m1', '2026-11-01T10:00:00Z', 'Rea
 const RY = `a${n}`;
 hook('agent', { agent_type: 'worker' }, [msgT('k1', '2026-11-01T10:00:00Z', 'Read'), msgT('k2', '2026-11-01T10:00:30Z', 'MultiEdit')], { agentType: 'worker' }); const RM = `a${n}`;
 hook('agent', { agent_type: 'worker' }, [msgT('j1', '2026-11-01T10:00:00Z', 'NotebookEdit')], { agentType: 'worker' }); const RN = `a${n}`;
-const read = (f) => fs.readFileSync(path.join(home, 'logs', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+// Point 3 (rapport 2026-11-17_06h45-temps-essaim-refus.md) : attente des commandes de fond, méthode du diagnostic temps.js (intervalles classés, balayage à priorités).
+// T(s) = 10:00:00 + s secondes. api-request ouvre la génération, l'assistant la ferme ; un tool_use dure jusqu'à son tool_result.
+const T = (s) => new Date(Date.parse('2026-11-01T10:00:00Z') + s * 1000).toISOString();
+const rq = (s) => ({ type: 'api-request', timestamp: T(s) });
+const as = (id, s, ...blocs) => ({ type: 'assistant', timestamp: T(s), message: { id, model: 'claude-sonnet-5-5', content: blocs, usage: { input_tokens: 1, output_tokens: 1 } } });
+const tu = (id, name, input = {}) => ({ type: 'tool_use', id, name, input }); const txt = (text) => ({ type: 'text', text });
+const rs = (s, id, content = 'ok') => ({ type: 'user', timestamp: T(s), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] } });
+const us = (s, content) => ({ type: 'user', timestamp: T(s), message: { role: 'user', content } });
+const BCL = 'until grep -q FIN log.txt; do sleep 5; done';
+const casFond = [ // [nom, historique, attente_fond_s attendue, fond_n attendu]
+  ['boucle until au premier plan : son temps compte, la génération et la lecture non', [rq(0), as('a1', 10, tu('b1', 'Bash', { command: BCL })), rs(170, 'b1'), rq(171), as('a2', 180, tu('r1', 'Read', { file_path: 'x' })), rs(185, 'r1')], 160, 0],
+  ['lancement run_in_background et commande PowerShell « moved to the background » : fond_n 2, ni l\'un ni l\'autre n\'est une attente', [rq(0), as('a1', 5, tu('f1', 'Bash', { command: 'node long.js > log 2>&1', run_in_background: true })), rs(6, 'f1', 'Command running in background with ID: b1'),
+    rq(7), as('a2', 10, tu('f2', 'PowerShell', { command: 'npm test' })), rs(40, 'f2', [{ type: 'text', text: 'Command was manually moved to the background with ID: b2' }]), rq(41), as('a3', 50, tu('f3', 'Bash', { command: 'ls', run_in_background: false })), rs(52, 'f3')], 0, 2],
+  ['deux boucles parallèles (for i in $(seq, while [ … sleep) ne comptent qu\'une fois', [rq(0), as('a1', 50, tu('l1', 'Bash', { command: 'for i in $(seq 1 30); do test -f x && break; sleep 5; done' }), tu('l2', 'PowerShell', { command: 'while [ ! -f x ]; do sleep 2; done' })), rs(150, 'l1'), rs(200, 'l2')], 150, 0],
+  ['génération par-dessus une boucle (second bloc du même message) : retirée de l\'attente', [rq(201), as('a1', 210, tu('l3', 'Bash', { command: 'until test -f y; do sleep 1; done' })), as('a1', 230, txt('…')), rs(270, 'l3')], 40, 0],
+  ['test au premier plan (pytest) parallèle à une boucle : le test passe avant', [rq(271), as('a1', 280, tu('p1', 'Bash', { command: 'pytest tests/a.py' }), tu('l4', 'Bash', { command: 'until [ -f z ]; do sleep 1; done' })), rs(310, 'p1'), rs(340, 'l4')], 30, 0],
+  ['Monitor, TaskOutput, BashOutput : attente de fond ; une lecture parallèle passe avant', [rq(341), as('a1', 350, tu('m1', 'Monitor')), rs(400, 'm1'), rq(401), as('a2', 410, tu('m2', 'TaskOutput'), tu('r2', 'Read', { file_path: 'a' })), rs(420, 'r2'), rs(450, 'm2'), rq(451), as('a3', 455, tu('m3', 'BashOutput')), rs(475, 'm3')], 100, 0],
+  ['fin de tour puis <task-notification> : attente ; fin de tour puis message ordinaire : pas une attente', [rq(451), as('a1', 460, txt('j\'attends')), us(640, '<task-notification>\n<task-id>b1</task-id>\n</task-notification>'), rq(641), as('a2', 650, txt('ok')), us(700, 'continue')], 180, 0],
+  ['notification après « Report delivered » : pas une attente ; SYSTEM NOTIFICATION (texte en tableau) sans rapport : attente', [rq(0), as('a1', 10, txt('j\'attends')), us(70, [{ type: 'text', text: '[SYSTEM NOTIFICATION - NOT USER INPUT] fin' }]), rq(71), as('a2', 80, tu('h1', 'SubagentHandback', { message: 'r' })), rs(90, 'h1', 'Report delivered.'), us(400, '<task-notification>x</task-notification>')], 60, 0],
+  ['chaque motif de boucle seul (for … seq, until, while [, sans « sleep N; done ») : trois attentes de 10 s', [rq(0), as('a1', 10, tu('w1', 'Bash', { command: 'for i in $(seq 1 9); do test -f x && break; sleep 0.5; done' })), rs(20, 'w1'), rq(21), as('a2', 30, tu('w2', 'Bash', { command: 'until test -f y; do sleep 0.5; done' })), rs(40, 'w2'),
+    rq(41), as('a3', 50, tu('w3', 'PowerShell', { command: 'while [ ! -f z ]; do sleep 0.5; done' })), rs(60, 'w3')], 30, 0],
+  ['sous-agent au premier plan parallèle à une boucle : il passe avant la boucle', [rq(0), as('a1', 10, tu('g1', 'Agent', { subagent_type: 'scout' }), tu('l5', 'Bash', { command: BCL })), rs(40, 'g1'), rs(70, 'l5')], 30, 0],
+];
+const idsFond = casFond.map(([, rows]) => (hook('agent', { agent_type: 'worker' }, rows, { agentType: 'worker', spawnDepth: 2, taskKind: 'local_agent' }), `a${n}`));
+hook('agent', { agent_type: 'worker' }, [{ type: 'assistant', message: { id: 'z1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 1, output_tokens: 1 } } }], { agentType: 'worker' }); const idSansDebut = `a${n}`; // aucun timestamp : début inconnu
+// actifs_au_lancement : autres *.jsonl du dossier subagents, début (premier timestamp, lu dans les 64 premiers Ko) ≤ début de cet agent (10:00:00) et fin (mtime) après.
+const SUB = path.join(home, 'sess-x', 'subagents'); fs.mkdirSync(path.join(SUB, 'dossier.jsonl'), { recursive: true });
+const ecrit = (nom, debut, mtime, avantLigne = '') => { const f = path.join(SUB, nom); fs.writeFileSync(f, `${avantLigne}${JSON.stringify({ type: 'user', timestamp: debut, message: { content: 'go' } })}\n`); if (mtime) fs.utimesSync(f, new Date(mtime), new Date(mtime)); return f; };
+ecrit('agent-actif.jsonl', '2026-11-01T09:50:00Z', '2026-11-01T10:30:00Z'); ecrit('agent-meme-debut.jsonl', '2026-11-01T10:00:00.000Z', '2026-11-01T11:00:00Z');
+ecrit('agent-fini.jsonl', '2026-11-01T09:00:00Z', '2026-11-01T09:30:00Z'); ecrit('agent-fin-pile.jsonl', '2026-11-01T09:55:00Z', '2026-11-01T10:00:00Z'); ecrit('agent-apres.jsonl', '2026-11-01T10:10:00Z', '2026-11-01T11:00:00Z');
+ecrit('agent-loin.jsonl', '2026-11-01T09:00:00Z', '2026-11-01T11:00:00Z', `${JSON.stringify({ type: 'x', pad: 'p'.repeat(70000) })}\n`); ecrit('agent-actif.meta.json', '2026-11-01T09:50:00Z', '2026-11-01T11:00:00Z');
+const fMoi = path.join(SUB, 'agent-moi.jsonl'); fs.writeFileSync(fMoi, [us(0, 'go'), rq(1), as('a1', 10, txt('fin'))].map((r) => JSON.stringify(r)).join('\n'));
+spawnSync(process.execPath, [path.join(__dirname, 'telemetrie.js'), 'agent'], { input: JSON.stringify({ session_id: 's1', cwd: home, agent_id: 'aMoi', agent_type: 'worker', agent_transcript_path: fMoi, transcript_path: fMoi }), env: { ...process.env, TELEMETRIE_HOME: home, TELEMETRIE_RAPPORTS: path.join(home, 'rapports') } });
+const read =(f) => fs.readFileSync(path.join(home, 'logs', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const A = read('agents.jsonl'); const S = read('sessions.jsonl');
 const line = (a) => A.find((o) => o.agent === a && !o.alerte); const alert = (a) => A.find((o) => o.agent === a && o.alerte);
 let fail = 0;
@@ -280,5 +313,10 @@ fs.rmSync(home, { recursive: true, force: true });
 check('rythme : 2 pauses de plus de 5 min (5 min pile n\'en est pas une, un message en deux lignes compte une fois), 1re édition à la requête 3', line(RY).pauses_5min === 2 && line(RY).premiere_edition === 3, line(RY));
 check('rythme : MultiEdit et NotebookEdit comptent comme une édition', line(RM).premiere_edition === 2 && line(RN).premiere_edition === 1, [line(RM), line(RN)]);
 check('rythme : sans édition, premiere_edition nulle ; sans pause, 0', line('a1').pauses_5min === 0 && line('a1').premiere_edition === null, line('a1'));
+casFond.forEach(([nom, , s, f], k) => { const l = line(idsFond[k]) || {}; check(`attente de fond : ${nom} : ${s} s, fond_n ${f}`, l.attente_fond_s === s && l.fond_n === f, l && [l.attente_fond_s, l.fond_n]); });
+check('attente de fond : profondeur (meta.spawnDepth) et taskKind (meta.taskKind) sur la ligne d\'agent', line(idsFond[0]).profondeur === 2 && line(idsFond[0]).taskKind === 'local_agent', line(idsFond[0]));
+check('attente de fond : sans commande de fond ni meta : attente_fond_s 0, fond_n 0, profondeur et taskKind nuls (clés présentes)', line('a1').attente_fond_s === 0 && line('a1').fond_n === 0 && 'profondeur' in line('a1') && line('a1').profondeur === null && 'taskKind' in line('a1') && line('a1').taskKind === null, line('a1'));
+check('actifs_au_lancement : 2 (un agent commencé avant et pas fini, un commencé à la même seconde ; ni fini avant, ni fini pile au début, ni commencé après, ni début au-delà de 64 Ko, ni .meta.json, ni dossier, ni soi)', (line('aMoi') || {}).actifs_au_lancement === 2, line('aMoi'));
+check('actifs_au_lancement : nul quand le début du sous-agent est inconnu (aucun timestamp)', line(idSansDebut) && line(idSansDebut).actifs_au_lancement === null, line(idSansDebut));
 
 process.exit(fail);

@@ -8,7 +8,9 @@ Un kit pour [Claude Code](https://code.claude.com/docs) qui répartit le travail
 - Chaque rôle a un modèle et un effort fixés par un profil (eco, normal ou max), choisi à chaque démarrage selon le rythme de consommation de la limite hebdomadaire.
 - Un travail qui dépasse une certaine taille est relu par des agents qui ne l'ont pas écrit, puis chaque point relevé est vérifié dans le code.
 - Des hooks rappellent les règles au bon moment (lecture longue, rapport en retard) et notent la télémétrie de chaque agent, sans jamais bloquer une action.
+- La télémétrie mesure aussi, pour chaque sous-agent, le temps passé à attendre ses commandes de fond, le nombre de ces commandes et les autres sous-agents actifs à son lancement.
 - Le `CLAUDE.md` pose un contrat d'honnêteté, protège le travail non commité et demande un rapport écrit à la fin de chaque tâche.
+- Chaque message de commit finit par un trailer `Verified-By:` qui dit ce qui a réellement tourné (tests, build, lint, e2e, ou `none` avec la raison) ; il se relit par `git log` lors d'un bilan, sans rien bloquer.
 
 On prompte en langage libre : Mootkit ne demande aucune commande, aucun mot-clé, aucun format de demande. Les règles, les gabarits et les messages sont écrits en français.
 
@@ -41,7 +43,7 @@ On peut forcer un profil en le demandant en langage libre (« passe en eco », �
 - **Node.js** : testé avec Node 24 ; aucune version plus ancienne n'a été essayée.
 - **Claude Code : testé avec Claude Code 2.1.325 ; version minimale non déterminée.**
 - **Un forfait claude.ai donnant accès à Fable** pour les profils normal et max (researcher, architect, conseil). Sans Fable, voir plus bas.
-- **Codex CLI, facultatif** : la skill de relecture l'appelle en plus quand le diff dépasse 400 lignes, quand la tâche touche à la sécurité, ou sur demande. **Le diff et les fichiers de la tâche partent alors chez OpenAI par Codex**, même sans demande explicite, secrets masqués au mieux. Si Codex est installé et connecté, c'est automatique : ne le connectez pas si votre code ne doit pas sortir. Sans lui, la relecture le dit et continue sans.
+- **Codex CLI, facultatif** : la skill de relecture l'appelle en plus quand le diff dépasse 400 lignes, quand la tâche touche à la sécurité ou à des actions irréversibles, ou sur demande. **Le diff et les fichiers de la tâche partent alors chez OpenAI par Codex**, même sans demande explicite, secrets masqués au mieux. Si Codex est installé et connecté, c'est automatique : ne le connectez pas si votre code ne doit pas sortir. Sans lui, la relecture le dit et continue sans.
 
 ## Installation
 
@@ -78,7 +80,7 @@ On peut forcer un profil en le demandant en langage libre (« passe en eco », �
 - **Deux variables pour un même dossier de rapports** : `KIT_RAPPORTS` et `TELEMETRIE_RAPPORTS`, à régler ensemble.
 - **`rate_limits`** n'arrive que pour les abonnés claude.ai et seulement après la première réponse de l'API : la première session d'une semaine peut démarrer sans donnée, donc en normal.
 - **Tests sautés hors du dépôt d'origine** : la non-régression v4 de `profil-test.js` demande un commit de l'historique privé de l'auteur, absent ici (le cas est signalé « SKIP ») ; le cas du lien symbolique de `codex-test.js` est sauté si Windows refuse de créer un lien (sans mode développeur).
-- Le pre-commit contrôle `settings.exemple.json` (au moins 156 règles dans `permissions.deny`), pas votre `settings.json`.
+- Le pre-commit contrôle `settings.exemple.json` (au moins 196 règles dans `permissions.deny`), pas votre `settings.json`.
 
 ## Pour le mainteneur : `outils/synchroniser.js`
 
